@@ -1,0 +1,209 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "virtualNetworkName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "appGatewayFirewallAddressPrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Address Space for AppGate and Firewall."
+      }
+    },
+    "virtualMachineAddressPrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Address Space for virtualMachine Managed Instance."
+      }
+    },
+    "LBAddressPrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Address Space for ASE."
+      }
+    },
+    "LBSubnetName": {
+      "type": "string",
+      "defaultValue": "AseGateSubNet",
+      "metadata": {
+        "description": "Application Gateway subnet name."
+      }
+    },
+    "appGatewaySubnetAddressPrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet for Application Gateway."
+      }
+    },
+    "appGatewaySubnetName": {
+      "type": "string",
+      "defaultValue": "QShAppGateSubNet",
+      "metadata": {
+        "description": "Application Gateway subnet name."
+      }
+    },
+    "firewallSubnetAddressPrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet for Azure Firewall."
+      }
+    },
+    "firewallSubnetName": {
+      "type": "string",
+      "defaultValue": "QShFirewallSubNet",
+      "metadata": {
+        "description": "Azure Firewall Name."
+      }
+    },
+    "virtualMachineSubnetAddressPrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet for virtualMachine Managed Instance."
+      }
+    },
+    "VNetGatewaySubnet": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet for the Virtual Network Gateway"
+      }
+    },
+    "virtualMachineSubnetName": {
+      "type": "string",
+      "defaultValue": "QShDBSubNet",
+      "metadata": {
+        "description": "virtualMachine Managed Instance Name."
+      }
+    },
+    "DNSServerAddress": {
+      "type": "array",
+      "metadata": {
+        "Description": "The DNS address(es) of the DNS Server(s) used by the VNET"
+      }
+    },
+    "tagsData": {
+      "type": "object"
+    }
+  },
+  "variables": {
+    "networkSecurityGroupName": "[concat('nsg-', parameters('virtualNetworkName'))]"
+  },
+  "resources": [
+    {
+      "apiVersion": "2018-08-01",
+      "name": "[parameters('virtualNetworkName')]",
+      "type": "Microsoft.Network/virtualNetworks",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+      ],
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('appGatewayFirewallAddressPrefix')]",
+            "[parameters('virtualMachineAddressPrefix')]",
+            "[parameters('LBAddressPrefix')]"
+          ]
+        },
+        "dhcpOptions": {
+          "dnsServers": "[parameters('DNSServerAddress')]"
+        },
+        "subnets": [
+          {
+            "name": "[parameters('appGatewaySubnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('appGatewaySubnetAddressPrefix')]"
+            }
+          },
+          {
+            "name": "[parameters('firewallSubnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('firewallSubnetAddressPrefix')]"
+            }
+          },
+          {
+            "name": "[parameters('virtualMachineSubnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('virtualMachineSubnetAddressPrefix')]"
+            }
+          },
+          {
+            "name": "[parameters('LBSubnetName')]",
+            "properties": {
+              "addressPrefix": "[parameters('LBAddressPrefix')]",
+              "delegations": [
+                {
+                  "properties": {
+                    "serviceName": "Microsoft.Web/serverFarms"
+                  },
+                  "name": "[concat(parameters('LBSubnetName'),'Delegation')]"
+                }
+              ],
+              "serviceEndpoints": [
+                {
+                  "service": "Microsoft.virtualMachine"
+                },
+                {
+                  "service": "Microsoft.Storage"
+                }
+              ],
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+              }
+            }
+          },
+          {
+            "name": "GatewaySubnet",
+            "properties": {
+              "addressPrefix": "[parameters('VNetGatewaySubnet')]",
+              "privateEndpointNetworkPolicies": "Enabled",
+              "privateLinkServiceNetworkPolicies": "Enabled"
+            }
+          }
+        ]
+      },
+      "tags": "[parameters('tagsData')]"
+    },
+    {
+      "apiVersion": "2019-04-01",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "name": "[variables('networkSecurityGroupName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Allow_Storage_Inbound",
+            "properties": {
+              "description": "Allow Storage traffic Inbound",
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "destinationPortRange": "445",
+              "sourceAddressPrefix": "Storage.CentralUS",
+              "destinationAddressPrefix": "VirtualNetwork",
+              "access": "Allow",
+              "priority": 100,
+              "direction": "Inbound"
+            }
+          },
+          {
+            "name": "Deny_All_Outbound",
+            "properties": {
+              "description": "Deny all traffic Outbound",
+              "protocol": "*",
+              "sourcePortRange": "*",
+              "destinationPortRange": "*",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Deny",
+              "priority": 4096,
+              "direction": "Outbound"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "lbName": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    },
+    "sku": {
+      "type": "string",
+      "metadata": {
+        "description": "Basic or Standard. Standard is what we need to use."
+      }
+    },
+    "existingLbSubnetName": {
+      "type": "string"
+    },
+    "existingVnetResourceGroup": {
+      "type": "string"
+    },
+    "existingVnetName": {
+      "type": "string"
+    },
+    "allocationMethod": {
+      "type": "string",
+      "metadata": {
+        "description": "Static or Dynamic. We need to use Static with private IP allocation."
+      }
+    },
+    "backendPoolName": {
+      "type": "string"
+    },
+    "tagsData": {
+      "type": "object"
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "2019-06-01",
+      "name": "[parameters('lbName')]",
+      "type": "Microsoft.Network/loadBalancers",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('sku')]"
+      },
+      "dependsOn": [],
+      "tags": "[parameters('tagsData')]",
+      "properties": {
+        "frontendIPConfigurations": [
+          {
+            "name": "LoadBalancerFrontEnd",
+            "properties": {
+              "privateIPAllocationMethod": "[parameters('allocationMethod')]",
+              "subnet": {
+                "id": "[resourceId(parameters('existingVnetResourceGroup'), 'Microsoft.Networks/virtualNetworks/subnets', parameters('existingVnetName'), parameters('existingLbSubnetName'))]"
+              }
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "[parameters('backendPoolName')]"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "LoadBalancerName": {
+      "type": "string",
+      "value": "[parameters('lbName')]"
+    },
+    "LoadBalancerResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/loadBalancers',parameters('lbName'))]"
+    },
+    "LoadBalancerResourceGroup": {
+      "type": "string",
+      "value": "[resourceGroup().name]"
+    }
+  }
+}

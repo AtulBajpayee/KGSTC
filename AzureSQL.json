@@ -1,0 +1,192 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2014-04-01-preview/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+    "parameters": {
+        "administratorLogin": {
+            "type": "string"
+        },
+        "administratorLoginPassword": {
+            "type": "securestring"
+        },
+        "location": {
+            "type": "string"
+        },
+        "serverName": {
+            "type": "string"
+        },
+        "databaseNames": {
+            "type": "array"
+        },
+        "tier": {
+            "type": "string"
+        },
+        "skuName": {
+            "type": "string"
+        },
+        "enableATP": {
+            "type": "bool",
+            "defaultValue": false
+        },
+        "allowAzureIps": {
+            "type": "bool",
+            "defaultValue": true
+        },
+        "emailSubscriptionAdmins": {
+            "type": "bool",
+            "defaultValue": true
+        },
+        "PublicNetworkAccess": {
+            "type": "string",
+            "defaultValue": "Disabled",
+            "allowedValues": [
+                "Enabled",
+                "Disabled"
+            ],
+            "metadata": {
+                "description": "Allows or Denys public network access"
+            }
+        },
+        "securityDistributionList": {
+            "type": "array"
+        },
+        "storageAccountName": {
+            "type": "string"
+        },
+        "tagsData": {
+            "type": "object"
+        }
+    },
+  "variables": {
+    "subscriptionId": "[subscription().subscriptionId]",
+    "resourceGroupName": "[resourceGroup().name]",
+    "databaseCollation": "SQL_Latin1_General_CP1_CI_AS"
+  },
+  "resources": [
+    {
+      "apiVersion": "2017-10-01-preview",
+      "location": "[parameters('location')]",
+      "name": "[parameters('serverName')]",
+      "type": "Microsoft.Sql/servers",
+        "properties": {
+            "administratorLogin": "[parameters('administratorLogin')]",
+            "administratorLoginPassword": "[parameters('administratorLoginPassword')]",
+            "version": "12.0",
+            "minimalTlsVersion": "1.2",
+            "PublicNetworkAccess": "[parameters('PublicNetworkAccess')]"
+        },
+      "tags": "[parameters('tagsData')]",
+      "resources": [
+        {
+          "condition": "[parameters('allowAzureIps')]",
+          "apiVersion": "2017-10-01-preview",
+          "type": "firewallrules",
+          "name": "AllowAllWindowsAzureIps",
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', parameters('serverName'))]"
+          ],
+          "location": "[parameters('location')]",
+          "properties": {
+            "endIpAddress": "0.0.0.0",
+            "startIpAddress": "0.0.0.0"
+          }
+        },
+        {
+          "condition": "[parameters('enableATP')]",
+          "apiVersion": "2017-03-01-preview",
+          "type": "securityAlertPolicies",
+          "name": "Default",
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', parameters('serverName'))]"
+          ],
+          "properties": {
+            "state": "Enabled",
+            "disabledAlerts": [],
+            "emailAccountAdmins": "[parameters('emailSubscriptionAdmins')]",
+            "emailAddresses": "[parameters('securityDistributionList')]"
+          }
+        },
+        {
+          "condition": "[parameters('enableATP')]",
+          "apiVersion": "2018-06-01-preview",
+          "type": "vulnerabilityAssessments",
+          "name": "Default",
+          "properties": {
+            "storageContainerPath": "[if(parameters('enableATP'), concat(reference(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2018-02-01').primaryEndpoints.blob, 'vulnerability-assessment'), '')]",
+            "storageAccountAccessKey": "[if(parameters('enableATP'), listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2018-02-01').keys[0].value, '')]",
+            "recurringScans": {
+              "isEnabled": true,
+              "emailSubscriptionAdmins": "[parameters('emailSubscriptionAdmins')]",
+              "emails": "[parameters('securityDistributionList')]"
+            }
+          },
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', parameters('serverName'))]",
+            "[concat('Microsoft.Sql/servers/', parameters('serverName'), '/securityAlertPolicies/Default')]"
+          ]
+        },
+        {
+          "apiVersion": "2017-03-01-preview",
+          "type": "auditingSettings",
+          "name": "DefaultAuditingSettings",
+          "dependsOn": [
+            "[parameters('serverName')]"
+          ],
+          "properties": {
+            "State": "Enabled",
+            "storageEndpoint": "[concat('https://', parameters('storageAccountName'), '.blob.core.windows.net/')]",
+            "storageAccountAccessKey": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value]",
+            "storageAccountSubscriptionId": "[subscription().subscriptionId]",
+            "retentionDays": "0",
+            "auditActionsAndGroups": null,
+            "isStorageSecondaryKeyInUse": false
+          }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Sql/servers/firewallRules",
+      "apiVersion": "2017-10-01-preview",
+      "name": "[concat(parameters('serverName'), '/FirewallConnection')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', parameters('serverName'))]"
+      ],
+      "properties": {
+        "startIpAddress": "0.0.0.0",
+        "endIpAddress": "0.0.0.0"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases",
+      "apiVersion": "2015-01-01",
+      "name": "[concat(parameters('serverName'), '/', parameters('databaseNames')[copyIndex()])]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[parameters('serverName')]"
+      ],
+      "properties": {
+        "edition": "[parameters('tier')]",
+        "collation": "[variables('databaseCollation')]",
+        "requestedServiceObjectiveName": "[parameters('skuName')]"
+      },
+      "tags": "[parameters('tagsData')]",
+      "resources": [
+        {
+          "comments": "Transparent Data Encryption",
+          "name": "current",
+          "type": "transparentDataEncryption",
+          "apiVersion": "2014-04-01-preview",
+          "properties": {
+            "status": "Enabled"
+          },
+          "dependsOn": [
+            "[parameters('databaseNames')[copyIndex()]]"
+          ]
+        }
+      ],
+      "copy": {
+        "name": "databaseNameCopy",
+        "count": "[length(parameters('databaseNames'))]"
+      }
+    }
+  ]
+}
